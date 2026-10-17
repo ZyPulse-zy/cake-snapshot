@@ -1,0 +1,31 @@
+name: Import verified source
+on:
+  push:
+    branches: [bootstrap/import]
+permissions:
+  contents: write
+  actions: write
+jobs:
+  import:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify immutable source bundle
+        run: |
+          base64 --decode .bootstrap/component.bundle.b64 > /tmp/component.bundle
+          echo '082aeaf0577808d41e53e412973771e214c6933ad4998b490b291005a04351c5  /tmp/component.bundle' | sha256sum -c -
+          git fetch /tmp/component.bundle main:refs/remotes/import/main
+          test "$(git rev-parse refs/remotes/import/main)" = a2bdad1296f217542b99aa12fa5e4524e0c051ed
+          git checkout --detach refs/remotes/import/main
+      - name: Verify source before publishing
+        run: |
+          make test sanitize
+          sudo modprobe sch_cake
+          sudo modprobe dummy
+          sudo env CAKE_TEST_PARENT_NETNS="$(readlink /proc/self/ns/net)" unshare -n python3 tests/test_integration.py ./build/cake-snapshot
+      - name: Publish signed local commit without changing its author
+        run: git push --force-with-lease=refs/heads/main:91dab2d1e22225e8f4092d203545b5863dea1609 origin HEAD:refs/heads/main
+      - name: Run the published CI workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api repos/ZyPulse-zy/cake-snapshot/actions/workflows/ci.yml/dispatches -f ref=main
