@@ -1,0 +1,27 @@
+name: build-and-test
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build, CLI and decoder tests
+        run: make test
+      - name: Address and undefined behavior sanitizers
+        run: make sanitize
+      - name: Install kernel test tools
+        run: sudo apt-get update && sudo apt-get install -y iproute2 kmod
+      - name: Isolated kernel integration
+        run: |
+          sudo modprobe sch_cake
+          sudo modprobe dummy
+          sudo env CAKE_TEST_PARENT_NETNS="$(readlink /proc/self/ns/net)" unshare -n python3 tests/test_integration.py ./build/cake-snapshot
+  musl:
+    runs-on: ubuntu-24.04
+    container: alpine:3.22
+    steps:
+      - run: apk add --no-cache build-base linux-headers python3 git
+      - uses: actions/checkout@v4
+      - run: make test
